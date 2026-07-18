@@ -117,18 +117,20 @@
         <!-- Aquí se meterán dinámicamente los archivos -->
     </div>
 </div>
-<!-- 1. Cargamos el script principal localmente -->
-<script src="js/ffmpeg.min.js"></script>
+
+
+<!-- 1. Cargamos el script principal desde la raíz -->
+<script src="ffmpeg.min.js"></script>
 
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         
         const { createFFmpeg, fetchFile } = FFmpeg;
         
-        // Configuramos FFmpeg
+        // 2. Simplificamos la inicialización. Al estar todo en la raíz, 
+        // FFmpeg buscará automáticamente 'ffmpeg-core.js' y 'ffmpeg-core.wasm' en el mismo directorio.
         const ffmpeg = createFFmpeg({ 
-            log: true,
-            corePath: window.location.origin + '/js/ffmpeg-core.js'
+            log: true 
         });
         
         const dropZone = document.getElementById('drop-zone');
@@ -206,35 +208,40 @@
             }
         }
 
-        // Función de conversión blindada contra caracteres extraños y cuelgues
+        // Función de conversión estable con argumentos independientes
         async function convertMp3ToMp2(file) {
-            // Generamos el nombre de salida final para el usuario
             const finalOutputName = file.name.replace(/\.mp3$/i, '.mp2');
+            const tempInput = "in.mp3";
+            const tempOutput = "out.mp2";
             
-            // Usamos nombres virtuales planos para evitar que FFmpeg falle con espacios, tildes o eñes
-            const tempInput = "temp_input.mp3";
-            const tempOutput = "temp_output.mp2";
+            const fileBuffer = await fetchFile(file);
+            ffmpeg.FS('writeFile', tempInput, fileBuffer);
             
-            // 1. Escribir el archivo usando el nombre temporal plano
-            ffmpeg.FS('writeFile', tempInput, await fetchFile(file));
+            // Argumentos separados estrictamente para evitar fallos de pthreads
+            await ffmpeg.run(
+                '-i', tempInput, 
+                '-c:a', 'mp2', 
+                '-b:a', '128k', 
+                '-ar', '44100', 
+                tempOutput
+            );
             
-            // 2. Ejecutar comandos forzados para Dalet (128k, 44100Hz)
-            await ffmpeg.run('-i', tempInput, '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', tempOutput);
-            
-            // 3. Leer el archivo convertido
             const data = ffmpeg.FS('readFile', tempOutput);
             const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
             const url = URL.createObjectURL(blob);
             
-            // 4. Forzar descarga con el nombre real original del archivo
-            const a = document.createElement('a');
-            a.href = url; 
-            a.download = finalOutputName;
-            document.body.appendChild(a); 
-            a.click();
+            await new Promise((resolve) => {
+                setTimeout(() => {
+                    const a = document.createElement('a');
+                    a.href = url; 
+                    a.download = finalOutputName;
+                    document.body.appendChild(a); 
+                    a.click();
+                    document.body.removeChild(a);
+                    resolve();
+                }, 50);
+            });
             
-            // Limpieza absoluta de memoria e hilos virtuales
-            document.body.removeChild(a); 
             URL.revokeObjectURL(url);
             ffmpeg.FS('unlink', tempInput); 
             ffmpeg.FS('unlink', tempOutput);
