@@ -1,0 +1,83 @@
+<!-- 1. Cargamos el script principal localmente -->
+<script src="js/ffmpeg.min.js"></script>
+
+<script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    
+    // 2. Aquí está el cambio clave: Le indicamos la ruta local de 'ffmpeg-core.js'
+    const ffmpeg = createFFmpeg({ 
+        log: true,
+        corePath: window.location.origin + '/js/ffmpeg-core.js'
+    });
+    
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const statusList = document.getElementById('status-list');
+    const loadingText = document.getElementById('loading-ffmpeg');
+
+    let isFFmpegReady = false;
+
+    async function initFFmpeg() {
+        try {
+            await ffmpeg.load();
+            isFFmpegReady = true;
+            loadingText.textContent = "¡Motor local listo! Ya puedes convertir archivos.";
+            loadingText.style.color = "#2ecc71";
+        } catch (error) {
+            console.error(error);
+            loadingText.textContent = "Error al cargar el motor local. Revisa la consola.";
+            loadingText.style.color = "#e74c3c";
+        }
+    }
+    initFFmpeg();
+
+    // [El resto de las funciones (processBatch, convertMp3ToMp2 y eventos) se mantienen EXACTAMENTE IGUALES al código anterior]
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('hover'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('hover'); });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault(); dropZone.classList.remove('hover');
+        if (!isFFmpegReady) return alert('Por favor, espera a que cargue el motor.');
+        const files = Array.from(e.dataTransfer.files).filter(file => file.name.endsWith('.mp3'));
+        if (files.length > 0) processBatch(files);
+    });
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+        if (!isFFmpegReady) return alert('Por favor, espera.');
+        const files = Array.from(e.target.files);
+        if (files.length > 0) processBatch(files);
+    });
+    async function processBatch(files) {
+        statusList.style.display = 'block'; statusList.innerHTML = '';
+        const queue = files.map((file, index) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'file-item';
+            itemDiv.innerHTML = `<span>${file.name}</span><span class="status waiting" id="status-${index}">En espera...</span>`;
+            statusList.appendChild(itemDiv);
+            return { file, index };
+        });
+        for (const task of queue) {
+            const statusLabel = document.getElementById(`status-${task.index}`);
+            statusLabel.textContent = "Procesando..."; statusLabel.className = "status processing";
+            try {
+                await convertMp3ToMp2(task.file);
+                statusLabel.textContent = "¡Listo!"; statusLabel.className = "status done";
+            } catch (err) {
+                console.error(err); statusLabel.textContent = "Error"; statusLabel.className = "status error";
+            }
+        }
+    }
+    async function convertMp3ToMp2(file) {
+        const inputName = file.name;
+        const outputName = inputName.replace(/\.mp3$/i, '.mp2');
+        ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+        await ffmpeg.run('-i', inputName, '-c:a', 'mp2', outputName);
+        const data = ffmpeg.FS('readFile', outputName);
+        const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = outputName;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        ffmpeg.FS('unlink', inputName); ffmpeg.FS('unlink', outputName);
+    }
+</script>
