@@ -66,18 +66,30 @@
             }
         }
     }
-    async function convertMp3ToMp2(file) {
-        const inputName = file.name;
-        const outputName = inputName.replace(/\.mp3$/i, '.mp2');
-        ffmpeg.FS('writeFile', inputName, await fetchFile(file));
-        await ffmpeg.run('-i', inputName, '-c:a', 'mp2', outputName);
-        const data = ffmpeg.FS('readFile', outputName);
-        const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = outputName;
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a); URL.revokeObjectURL(url);
-        ffmpeg.FS('unlink', inputName); ffmpeg.FS('unlink', outputName);
-    }
+async function convertMp3ToMp2(file) {
+    const inputName = file.name;
+    const outputName = inputName.replace(/\.mp3$/i, '.mp2');
+
+    // Escribir el archivo en el sistema virtual
+    ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+
+    // COMANDO MODIFICADO PARA DALET:
+    // -i : archivo de entrada
+    // -c:a mp2 : códec de audio MP2
+    // -b:a 128k : fuerza el bitrate a 128 kbps (estricto para Dalet)
+    // -ar 44100 : fuerza la frecuencia de muestreo a 44.1 kHz
+    await ffmpeg.run('-i', inputName, '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', outputName);
+
+    // Leer el archivo resultante
+    const data = ffmpeg.FS('readFile', outputName);
+    
+    // [El resto del código de descarga automática se mantiene igual]
+    const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = outputName;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    ffmpeg.FS('unlink', inputName); ffmpeg.FS('unlink', outputName);
+}
 </script>
