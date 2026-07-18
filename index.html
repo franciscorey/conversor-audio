@@ -1,95 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor MP3 a MP2 en Lote</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --primary: #4a90e2;
+            --primary-hover: #357abd;
+            --text: #333333;
+            --border: #cccccc;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+            color: #2c3e50;
+        }
+
+        /* Zona de Arrastre */
+        #drop-zone {
+            border: 3px dashed var(--border);
+            border-radius: 8px;
+            padding: 40px 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fafafa;
+            margin-bottom: 20px;
+        }
+
+        #drop-zone.hover {
+            border-color: var(--primary);
+            background: #edf5ff;
+        }
+
+        #drop-zone p {
+            margin: 0;
+            font-size: 16px;
+            color: #666;
+        }
+
+        /* Lista de Archivos y Estado */
+        #status-list {
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 15px;
+            background: #fff;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #f9f9f9;
+            font-size: 14px;
+        }
+
+        .file-item:last-child {
+            border-bottom: none;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+        .status.waiting { color: #f39c12; }
+        .status.processing { color: var(--primary); }
+        .status.done { color: #2ecc71; }
+        .status.error { color: #e74c3c; }
+
+        #loading-ffmpeg {
+            color: #7f8c8d;
+            font-style: italic;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Conversor MP3 a MP2 en Lote</h1>
+    <div id="loading-ffmpeg">Cargando motor de conversión (FFmpeg)...</div>
+    
+    <div id="drop-zone">
+        <p>Arrastra tus archivos MP3 aquí o haz clic para seleccionarlos</p>
+        <input type="file" id="file-input" multiple accept=".mp3" style="display: none;">
+    </div>
+
+    <div id="status-list" style="display: none;">
+        <!-- Aquí se meterán dinámicamente los archivos -->
+    </div>
+</div>
 <!-- 1. Cargamos el script principal localmente -->
 <script src="js/ffmpeg.min.js"></script>
 
 <script>
-    const { createFFmpeg, fetchFile } = FFmpeg;
-    
-    // 2. Aquí está el cambio clave: Le indicamos la ruta local de 'ffmpeg-core.js'
-    const ffmpeg = createFFmpeg({ 
-        log: true,
-        corePath: window.location.origin + '/js/ffmpeg-core.js'
-    });
-    
-    const dropZone = document.getElementById('drop-zone');
-    const fileInput = document.getElementById('file-input');
-    const statusList = document.getElementById('status-list');
-    const loadingText = document.getElementById('loading-ffmpeg');
-
-    let isFFmpegReady = false;
-
-    async function initFFmpeg() {
-        try {
-            await ffmpeg.load();
-            isFFmpegReady = true;
-            loadingText.textContent = "¡Motor local listo! Ya puedes convertir archivos.";
-            loadingText.style.color = "#2ecc71";
-        } catch (error) {
-            console.error(error);
-            loadingText.textContent = "Error al cargar el motor local. Revisa la consola.";
-            loadingText.style.color = "#e74c3c";
-        }
-    }
-    initFFmpeg();
-
-    // [El resto de las funciones (processBatch, convertMp3ToMp2 y eventos) se mantienen EXACTAMENTE IGUALES al código anterior]
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('hover'); });
-    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('hover'); });
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault(); dropZone.classList.remove('hover');
-        if (!isFFmpegReady) return alert('Por favor, espera a que cargue el motor.');
-        const files = Array.from(e.dataTransfer.files).filter(file => file.name.endsWith('.mp3'));
-        if (files.length > 0) processBatch(files);
-    });
-    dropZone.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => {
-        if (!isFFmpegReady) return alert('Por favor, espera.');
-        const files = Array.from(e.target.files);
-        if (files.length > 0) processBatch(files);
-    });
-    async function processBatch(files) {
-        statusList.style.display = 'block'; statusList.innerHTML = '';
-        const queue = files.map((file, index) => {
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'file-item';
-            itemDiv.innerHTML = `<span>${file.name}</span><span class="status waiting" id="status-${index}">En espera...</span>`;
-            statusList.appendChild(itemDiv);
-            return { file, index };
+    // Esperamos a que el HTML esté completamente cargado en el navegador
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        
+        // Indicamos la ruta local de 'ffmpeg-core.js'
+        const ffmpeg = createFFmpeg({ 
+            log: true,
+            corePath: window.location.origin + '/js/ffmpeg-core.js'
         });
-        for (const task of queue) {
-            const statusLabel = document.getElementById(`status-${task.index}`);
-            statusLabel.textContent = "Procesando..."; statusLabel.className = "status processing";
+        
+        // Ahora que el HTML existe, estas variables ya no serán 'null'
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const statusList = document.getElementById('status-list');
+        const loadingText = document.getElementById('loading-ffmpeg');
+
+        let isFFmpegReady = false;
+
+        // Inicializar FFmpeg
+        async function initFFmpeg() {
             try {
-                await convertMp3ToMp2(task.file);
-                statusLabel.textContent = "¡Listo!"; statusLabel.className = "status done";
-            } catch (err) {
-                console.error(err); statusLabel.textContent = "Error"; statusLabel.className = "status error";
+                await ffmpeg.load();
+                isFFmpegReady = true;
+                loadingText.textContent = "¡Motor local listo! Ya puedes convertir archivos.";
+                loadingText.style.color = "#2ecc71";
+            } catch (error) {
+                console.error(error);
+                loadingText.textContent = "Error al cargar el motor local. Revisa la consola.";
+                loadingText.style.color = "#e74c3c";
             }
         }
-    }
-async function convertMp3ToMp2(file) {
-    const inputName = file.name;
-    const outputName = inputName.replace(/\.mp3$/i, '.mp2');
+        initFFmpeg();
 
-    // Escribir el archivo en el sistema virtual
-    ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+        // Eventos para Arrastrar y Soltar (Drag and Drop)
+        dropZone.addEventListener('dragover', (e) => { 
+            e.preventDefault(); 
+            dropZone.classList.add('hover'); 
+        });
 
-    // COMANDO MODIFICADO PARA DALET:
-    // -i : archivo de entrada
-    // -c:a mp2 : códec de audio MP2
-    // -b:a 128k : fuerza el bitrate a 128 kbps (estricto para Dalet)
-    // -ar 44100 : fuerza la frecuencia de muestreo a 44.1 kHz
-    await ffmpeg.run('-i', inputName, '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', outputName);
+        dropZone.addEventListener('dragleave', () => { 
+            dropZone.classList.remove('hover'); 
+        });
 
-    // Leer el archivo resultante
-    const data = ffmpeg.FS('readFile', outputName);
-    
-    // [El resto del código de descarga automática se mantiene igual]
-    const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = outputName;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
-    ffmpeg.FS('unlink', inputName); ffmpeg.FS('unlink', outputName);
-}
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault(); 
+            dropZone.classList.remove('hover');
+            if (!isFFmpegReady) return alert('Por favor, espera a que cargue el motor.');
+            const files = Array.from(e.dataTransfer.files).filter(file => file.name.toLowerCase().endsWith('.mp3'));
+            if (files.length > 0) processBatch(files);
+        });
+
+        // Evento para hacer clic y buscar archivos
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (!isFFmpegReady) return alert('Por favor, espera.');
+            const files = Array.from(e.target.files);
+            if (files.length > 0) processBatch(files);
+        });
+
+        // Procesamiento del lote
+        async function processBatch(files) {
+            statusList.style.display = 'block'; 
+            statusList.innerHTML = '';
+            
+            const queue = files.map((file, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'file-item';
+                itemDiv.innerHTML = `<span>${file.name}</span><span class="status waiting" id="status-${index}">En espera...</span>`;
+                statusList.appendChild(itemDiv);
+                return { file, index };
+            });
+
+            for (const task of queue) {
+                const statusLabel = document.getElementById(`status-${task.index}`);
+                statusLabel.textContent = "Procesando..."; 
+                statusLabel.className = "status processing";
+                try {
+                    await convertMp3ToMp2(task.file);
+                    statusLabel.textContent = "¡Listo!"; 
+                    statusLabel.className = "status done";
+                } catch (err) {
+                    console.error(err); 
+                    statusLabel.textContent = "Error"; 
+                    statusLabel.className = "status error";
+                }
+            }
+        }
+
+        // Función de conversión optimizada para Dalet 5.1 (44.1kHz y 128kbps)
+        async function convertMp3ToMp2(file) {
+            const inputName = file.name;
+            const outputName = inputName.replace(/\.mp3$/i, '.mp2');
+            
+            ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+            
+            // Forzamos parámetros para que Dalet no tenga problemas de compatibilidad
+            await ffmpeg.run('-i', inputName, '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', outputName);
+            
+            const data = ffmpeg.FS('readFile', outputName);
+            const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url; 
+            a.download = outputName;
+            document.body.appendChild(a); 
+            a.click();
+            
+            document.body.removeChild(a); 
+            URL.revokeObjectURL(url);
+            ffmpeg.FS('unlink', inputName); 
+            ffmpeg.FS('unlink', outputName);
+        }
+    });
 </script>
