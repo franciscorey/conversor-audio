@@ -121,18 +121,16 @@
 <script src="js/ffmpeg.min.js"></script>
 
 <script>
-    // Esperamos a que el HTML esté completamente cargado en el navegador
     document.addEventListener('DOMContentLoaded', () => {
         
         const { createFFmpeg, fetchFile } = FFmpeg;
         
-        // Indicamos la ruta local de 'ffmpeg-core.js'
+        // Configuramos FFmpeg
         const ffmpeg = createFFmpeg({ 
             log: true,
             corePath: window.location.origin + '/js/ffmpeg-core.js'
         });
         
-        // Ahora que el HTML existe, estas variables ya no serán 'null'
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         const statusList = document.getElementById('status-list');
@@ -140,22 +138,21 @@
 
         let isFFmpegReady = false;
 
-        // Inicializar FFmpeg
         async function initFFmpeg() {
             try {
                 await ffmpeg.load();
                 isFFmpegReady = true;
-                loadingText.textContent = "¡Motor local listo! Ya puedes convertir archivos.";
+                loadingText.textContent = "¡Motor listo! Ya puedes arrastrar tus MP3.";
                 loadingText.style.color = "#2ecc71";
             } catch (error) {
                 console.error(error);
-                loadingText.textContent = "Error al cargar el motor local. Revisa la consola.";
+                loadingText.textContent = "Error al cargar el motor. Revisa la consola.";
                 loadingText.style.color = "#e74c3c";
             }
         }
         initFFmpeg();
 
-        // Eventos para Arrastrar y Soltar (Drag and Drop)
+        // Eventos de arrastre
         dropZone.addEventListener('dragover', (e) => { 
             e.preventDefault(); 
             dropZone.classList.add('hover'); 
@@ -168,20 +165,19 @@
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault(); 
             dropZone.classList.remove('hover');
-            if (!isFFmpegReady) return alert('Por favor, espera a que cargue el motor.');
+            if (!isFFmpegReady) return alert('Espera a que el motor esté listo.');
             const files = Array.from(e.dataTransfer.files).filter(file => file.name.toLowerCase().endsWith('.mp3'));
             if (files.length > 0) processBatch(files);
         });
 
-        // Evento para hacer clic y buscar archivos
         dropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => {
-            if (!isFFmpegReady) return alert('Por favor, espera.');
+            if (!isFFmpegReady) return alert('Espera a que el motor esté listo.');
             const files = Array.from(e.target.files);
             if (files.length > 0) processBatch(files);
         });
 
-        // Procesamiento del lote
+        // Procesar lote secuencialmente
         async function processBatch(files) {
             statusList.style.display = 'block'; 
             statusList.innerHTML = '';
@@ -203,37 +199,45 @@
                     statusLabel.textContent = "¡Listo!"; 
                     statusLabel.className = "status done";
                 } catch (err) {
-                    console.error(err); 
+                    console.error("Error detallado en la conversión:", err); 
                     statusLabel.textContent = "Error"; 
                     statusLabel.className = "status error";
                 }
             }
         }
 
-        // Función de conversión optimizada para Dalet 5.1 (44.1kHz y 128kbps)
+        // Función de conversión blindada contra caracteres extraños y cuelgues
         async function convertMp3ToMp2(file) {
-            const inputName = file.name;
-            const outputName = inputName.replace(/\.mp3$/i, '.mp2');
+            // Generamos el nombre de salida final para el usuario
+            const finalOutputName = file.name.replace(/\.mp3$/i, '.mp2');
             
-            ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+            // Usamos nombres virtuales planos para evitar que FFmpeg falle con espacios, tildes o eñes
+            const tempInput = "temp_input.mp3";
+            const tempOutput = "temp_output.mp2";
             
-            // Forzamos parámetros para que Dalet no tenga problemas de compatibilidad
-            await ffmpeg.run('-i', inputName, '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', outputName);
+            // 1. Escribir el archivo usando el nombre temporal plano
+            ffmpeg.FS('writeFile', tempInput, await fetchFile(file));
             
-            const data = ffmpeg.FS('readFile', outputName);
+            // 2. Ejecutar comandos forzados para Dalet (128k, 44100Hz)
+            await ffmpeg.run('-i', tempInput, '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', tempOutput);
+            
+            // 3. Leer el archivo convertido
+            const data = ffmpeg.FS('readFile', tempOutput);
             const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
             const url = URL.createObjectURL(blob);
             
+            // 4. Forzar descarga con el nombre real original del archivo
             const a = document.createElement('a');
             a.href = url; 
-            a.download = outputName;
+            a.download = finalOutputName;
             document.body.appendChild(a); 
             a.click();
             
+            // Limpieza absoluta de memoria e hilos virtuales
             document.body.removeChild(a); 
             URL.revokeObjectURL(url);
-            ffmpeg.FS('unlink', inputName); 
-            ffmpeg.FS('unlink', outputName);
+            ffmpeg.FS('unlink', tempInput); 
+            ffmpeg.FS('unlink', tempOutput);
         }
     });
 </script>
